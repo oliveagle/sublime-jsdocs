@@ -1,4 +1,14 @@
 [
+  // open a docblock with enter while editing python script
+  { "keys": ["enter"], "command": "jsdocs",
+    "context": [
+      { "key": "setting.auto_indent",   "operator": "equal",          "operand": true,                    "match_all": true },
+      { "key": "selection_empty",       "operator": "equal",          "operand": true,                    "match_all": true },
+      { "key": "auto_complete_visible", "operator": "equal",          "operand": false,                   "match_all": true },
+      { "key": "preceding_text",        "operator": "regex_contains", "operand": "^\\s*(\"|'){3}$", "match_all": true },
+      { "key": "selector", "operator": "equal", "operand": "source.python" }
+    ]
+  },
   // open a docblock with enter
   { "keys": ["enter"], "command": "jsdocs",
     "context": [

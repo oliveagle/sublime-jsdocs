@@ -60,13 +60,14 @@ def getParser(view):
         return JsdocsCPP(viewSettings)
     elif sourceLang == 'objc' or sourceLang == 'objc++':
         return JsdocsObjC(viewSettings)
+    elif sourceLang.lower() == 'python':
+        return JsdocsPython(viewSettings)
     return JsdocsJavascript(viewSettings)
 
 
 class JsdocsCommand(sublime_plugin.TextCommand):
 
     def run(self, edit, inline=False):
-
         self.initialize(self.view, inline)
 
         # erase characters in the view (will be added to the output later)
@@ -859,6 +860,141 @@ class JsdocsObjC(JsdocsParser):
     def parseVar(self, line):
         return None
 
+
+
+class JsdocsPython(JsdocsParser):
+    def setupSettings(self):
+        identifier = '[a-zA-Z_$][a-zA-Z_$0-9]*'
+        nameToken = '[a-zA-Z_\\x7f-\\xff][a-zA-Z0-9_\\x7f-\\xff]*'
+        self.settings = {
+            # curly brackets around the type information
+            'curlyTypes': False,
+            'typeInfo': True,
+            'typeTag': "var",
+            'varIdentifier': identifier,
+            'fnIdentifier': nameToken,
+            'fnOpener': 'def(?:\\s+' + nameToken + ')?\\s*\\(',
+            'commentCloser': '"""',
+            'bool': "boolean",
+            'function': "def"
+        }
+
+    def getDefinition(self, view, pos):
+        """
+        get a relevant definition starting at the given point
+        returns string
+        """
+        # maxLines = 25  # don't go further than this
+
+        row, col = view.rowcol(pos)
+
+        maxLines = min(row, 20)
+        openBrackets = 0
+
+        definition = ''
+
+        def countBrackets(total, bracket):
+            return total + (1 if bracket == '(' else -1)
+
+        for i in xrange(1, maxLines):
+            point = view.text_point(row - i, col)
+            line = read_line(view, point)
+            if line is None:
+                break
+
+            line = re.sub("//.*", "", line)
+            line = re.sub(r"/\*.*\*/", "", line)
+            if definition == '':
+                if not self.settings['fnOpener'] or not re.search(self.settings['fnOpener'], line):
+                    definition = line
+                    break
+            definition += line
+            openBrackets = reduce(countBrackets, re.findall('[()]', line), openBrackets)
+            if openBrackets == 0:
+                break
+        return definition
+
+    def parseFunction(self, line):
+        res = re.search(
+            'def\\s+'
+            + '(?P<name>' + self.settings['fnIdentifier'] + ')'
+            # function fnName
+            # (arg1, arg2)
+            + '\\s*\\(\\s*(?P<args>.*)\)',
+            line
+        )
+        if not res:
+            return None
+
+        return (res.group('name'), res.group('args'), None)
+
+    def getArgType(self, arg):
+        #  function add($x, $y = 1)
+        res = re.search(
+            '(?P<name>' + self.settings['varIdentifier'] + ")\\s*=\\s*(?P<val>.*)",
+            arg
+        )
+        if res:
+            return self.guessTypeFromValue(res.group('val'))
+
+        #  function sum(Array $x)
+        if re.search('\\S\\s', arg):
+            return re.search("^(\\S+)", arg).group(1)
+        else:
+            return None
+
+    def getArgName(self, arg):
+        return re.search("(" + self.settings['varIdentifier'] + ")(?:\\s*=.*)?$", arg).group(1)
+
+    def parseVar(self, line):
+        res = re.search(
+            #   var $foo = blah,
+            #       $foo = blah;
+            #   $baz->foo = blah;
+            #   $baz = array(
+            #        'foo' => blah
+            #   )
+
+            '(?P<name>' + self.settings['varIdentifier'] + ')\\s*=>?\\s*(?P<val>.*?)(?:[;,]|$)',
+            line
+        )
+        if res:
+            return (res.group('name'), res.group('val').strip())
+
+        res = re.search(
+            '\\b(?:var|public|private|protected|static)\\s+(?P<name>' + self.settings['varIdentifier'] + ')',
+            line
+        )
+        if res:
+            return (res.group('name'), None)
+
+        return None
+
+    def guessTypeFromValue(self, val):
+        if is_numeric(val):
+            return "float" if '.' in val else "integer"
+        if val[0] == '"' or val[0] == "'":
+            return "string"
+        if val[:5] == 'array':
+            return "array"
+        if val.lower() in ('true', 'false', 'filenotfound'):
+            return 'boolean'
+        if val[:4] == 'new ':
+            res = re.search('new (' + self.settings['fnIdentifier'] + ')', val)
+            return res and res.group(1) or None
+        return None
+
+    def getFunctionReturnType(self, name, retval):
+        if (name[:2] == '__'):
+            if name in ('__construct', '__destruct', '__set', '__unset', '__wakeup'):
+                return None
+            if name == '__sleep':
+                return 'array'
+            if name == '__toString':
+                return 'string'
+            if name == '__isset':
+                return 'boolean'
+        return JsdocsParser.getFunctionReturnType(self, name, retval)
 
 ############################################################33
 
