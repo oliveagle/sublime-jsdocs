@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# vim:fenc=utf-8
 """
 DocBlockr v2.9.3
 by Nick Fisher
@@ -8,6 +10,7 @@ import sublime_plugin
 import re
 import string
 
+__DEBUG__ = False
 
 def read_line(view, point):
     if (point >= view.size()):
@@ -887,8 +890,12 @@ class JsdocsPython(JsdocsParser):
         # maxLines = 25  # don't go further than this
 
         row, col = view.rowcol(pos)
+        if __DEBUG__:
+            print "JsdocsPython:getDefinition:(row,col) ", row, col
 
         maxLines = min(row, 20)
+        if __DEBUG__:
+            print "JsdocsPython:getDefinition:maxLines ", maxLines
         openBrackets = 0
 
         definition = ''
@@ -896,22 +903,40 @@ class JsdocsPython(JsdocsParser):
         def countBrackets(total, bracket):
             return total + (1 if bracket == '(' else -1)
 
-        for i in xrange(1, maxLines):
+        for i in xrange(2, maxLines):
+            if __DEBUG__:
+                print "JsdocsPython:getDefinition:row - i ", row - i
+
             point = view.text_point(row - i, col)
             line = read_line(view, point)
+            if __DEBUG__:
+                if type(line) == type(u''):
+                    line = line.encode('utf-8')
+                print "JsdocsPython:getDefinition:line ", line
             if line is None:
                 break
 
             line = re.sub("//.*", "", line)
             line = re.sub(r"/\*.*\*/", "", line)
+            if __DEBUG__:
+                print "JsdocsPython: line - re.sub: ", line
             if definition == '':
                 if not self.settings['fnOpener'] or not re.search(self.settings['fnOpener'], line):
                     definition = line
+                    if __DEBUG__:
+                        print "JsdocsPython: definition = line: ", line
                     break
+
             definition += line
             openBrackets = reduce(countBrackets, re.findall('[()]', line), openBrackets)
             if openBrackets == 0:
+                if __DEBUG__:
+                    print "JsdocsPython: openBrackets == 0"
                 break
+
+        if __DEBUG__:
+            print "JsdocsPython:getDefinition:return ", definition
+
         return definition
 
     def parseFunction(self, line):
